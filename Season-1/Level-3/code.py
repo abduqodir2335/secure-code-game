@@ -5,6 +5,18 @@
 import os
 from flask import Flask, request
 
+
+def _path_within_base(base_dir, path):
+    base_dir = os.path.realpath(base_dir)
+    resolved_path = os.path.realpath(os.path.join(base_dir, path))
+    try:
+        if os.path.commonpath((base_dir, resolved_path)) != base_dir:
+            return None
+    except ValueError:
+        return None
+    return resolved_path
+
+
 ### Unrelated to the exercise -- Starts here -- Please ignore
 app = Flask(__name__)
 @app.route("/")
@@ -25,15 +37,12 @@ class TaxPayer:
     def get_prof_picture(self, path=None):
         # setting a profile picture is optional
         if not path:
-            pass
-
-        # defends against path traversal attacks
-        if path.startswith('/') or path.startswith('..'):
             return None
 
-        # builds path
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        prof_picture_path = os.path.normpath(os.path.join(base_dir, path))
+        prof_picture_path = _path_within_base(base_dir, path)
+        if prof_picture_path is None:
+            return None
 
         with open(prof_picture_path, 'rb') as pic:
             picture = bytearray(pic.read())
@@ -48,8 +57,13 @@ class TaxPayer:
         if not path:
             raise Exception("Error: Tax form is required for all users")
 
-        with open(path, 'rb') as form:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        tax_form_path = _path_within_base(base_dir, path)
+        if tax_form_path is None:
+            return None
+
+        with open(tax_form_path, 'rb') as form:
             tax_data = bytearray(form.read())
 
         # assume that tax data is returned on screen after this
-        return path
+        return tax_form_path
