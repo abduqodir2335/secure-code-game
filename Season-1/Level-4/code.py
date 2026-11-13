@@ -11,7 +11,28 @@ the tests.py again to recreate it.
 
 import sqlite3
 import os
+import re
 from flask import Flask, request
+
+
+_SAFE_STOCK_SELECT = re.compile(
+    r"\s*SELECT\s+(price|\*)\s+FROM\s+stocks\s+WHERE\s+symbol\s*=\s*'([A-Za-z0-9_.-]+)'\s*",
+    re.IGNORECASE,
+)
+
+
+def _execute_stock_select(cursor, query):
+    match = _SAFE_STOCK_SELECT.fullmatch(query)
+    if match is None:
+        raise ValueError("Only stock price/info SELECT queries are allowed")
+
+    column, symbol = match.groups()
+    cursor.execute(
+        f"SELECT {column} FROM stocks WHERE symbol = ?",
+        (symbol,),
+    )
+    return cursor.fetchall()
+
 
 ### Unrelated to the exercise -- Starts here -- Please ignore
 app = Flask(__name__)
@@ -106,7 +127,7 @@ class DB_CRUD_ops(object):
                 # res += "[SANITIZED_QUERY]" + sanitized_query + "\n"
                 res += "CONFIRM THAT THE ABOVE QUERY IS NOT MALICIOUS TO EXECUTE"
             else:
-                cur.execute(query)
+                cur.execute("SELECT * FROM stocks WHERE symbol = ?", (stock_symbol,))
 
                 query_outcome = cur.fetchall()
                 for result in query_outcome:
@@ -135,14 +156,10 @@ class DB_CRUD_ops(object):
             res = "[METHOD EXECUTED] get_stock_price\n"
             query = "SELECT price FROM stocks WHERE symbol = '" + stock_symbol + "'"
             res += "[QUERY] " + query + "\n"
-            if ';' in query:
-                res += "[SCRIPT EXECUTION]\n"
-                cur.executescript(query)
-            else:
-                cur.execute(query)
-                query_outcome = cur.fetchall()
-                for result in query_outcome:
-                    res += "[RESULT] " + str(result) + "\n"
+            cur.execute("SELECT price FROM stocks WHERE symbol = ?", (stock_symbol,))
+            query_outcome = cur.fetchall()
+            for result in query_outcome:
+                res += "[RESULT] " + str(result) + "\n"
             return res
 
         except sqlite3.Error as e:
@@ -170,7 +187,10 @@ class DB_CRUD_ops(object):
             query = "UPDATE stocks SET price = '%d' WHERE symbol = '%s'" % (price, stock_symbol)
             res += "[QUERY] " + query + "\n"
 
-            cur.execute(query)
+            cur.execute(
+                "UPDATE stocks SET price = ? WHERE symbol = ?",
+                (price, stock_symbol),
+            )
             db_con.commit()
             query_outcome = cur.fetchall()
             for result in query_outcome:
@@ -198,13 +218,11 @@ class DB_CRUD_ops(object):
             cur = db_con.cursor()
 
             res = "[METHOD EXECUTED] exec_multi_query\n"
-            for query in filter(None, query.split(';')):
+            for query in query.split(';'):
+                if not query.strip():
+                    continue
                 res += "[QUERY]" + query + "\n"
-                query = query.strip()
-                cur.execute(query)
-                db_con.commit()
-
-                query_outcome = cur.fetchall()
+                query_outcome = _execute_stock_select(cur, query)
                 for result in query_outcome:
                     res += "[RESULT] " + str(result) + " "
             return res
@@ -230,14 +248,11 @@ class DB_CRUD_ops(object):
 
             res = "[METHOD EXECUTED] exec_user_script\n"
             res += "[QUERY] " + query + "\n"
-            if ';' in query:
-                res += "[SCRIPT EXECUTION]"
-                cur.executescript(query)
-                db_con.commit()
-            else:
-                cur.execute(query)
-                db_con.commit()
-                query_outcome = cur.fetchall()
+            queries = [statement for statement in query.split(';') if statement.strip()]
+            if len(queries) > 1:
+                res += "[SCRIPT EXECUTION]\n"
+            for statement in queries:
+                query_outcome = _execute_stock_select(cur, statement)
                 for result in query_outcome:
                     res += "[RESULT] " + str(result)
             return res
