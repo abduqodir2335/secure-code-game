@@ -57,6 +57,24 @@ class TestDatabase(unittest.TestCase):
         expected_output = "[METHOD EXECUTED] exec_user_script\n[QUERY] SELECT price FROM stocks WHERE symbol = 'MSFT'\n[RESULT] (300.0,)"
         actual_output = op.exec_user_script("SELECT price FROM stocks WHERE symbol = 'MSFT'")
         self.assertEqual(actual_output, expected_output) 
+
+    def test_7(self):
+        op = c.DB_CRUD_ops()
+        malicious_symbol = "MSFT'; UPDATE stocks SET price = '525' WHERE symbol = 'MSFT'--"
+
+        op.get_stock_info(malicious_symbol)
+        op.get_stock_price(malicious_symbol)
+        op.update_stock_price(malicious_symbol, 525.0)
+
+        with self.assertRaises(ValueError):
+            op.exec_multi_query("UPDATE stocks SET price = 525 WHERE symbol = 'MSFT'")
+        with self.assertRaises(ValueError):
+            op.exec_user_script("UPDATE stocks SET price = 525 WHERE symbol = 'MSFT'")
+
+        self.assertIn(
+            "[RESULT] (300.0,)",
+            op.get_stock_price("MSFT"),
+        )
         
 if __name__ == '__main__':    
     unittest.main()
